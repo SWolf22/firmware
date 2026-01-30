@@ -1,109 +1,42 @@
-#include "ButtonLedHandshakeModule.h"
+#pragma once
 
-#include <algorithm>
+#include <Arduino.h>
 
-ButtonLedHandshakeModule::ButtonLedHandshakeModule(bool isMaster_)
-    : ProtobufModule("ButtonLedHandshake"), isMaster(isMaster_) {
-    initPins();
-}
+// Wichtig: NICHT "Module.h" (RadioLib-Falle!), sondern Meshtastic ProtobufModule:
+#include "mesh/ProtobufModule.h"
+#include "mesh/generated/meshtastic/mesh.pb.h"
+#include "mesh/generated/meshtastic/portnums.pb.h"
 
-void ButtonLedHandshakeModule::initPins() {
-    pinMode(PIN_BTN, INPUT_PULLUP);
-    pinMode(PIN_LED, OUTPUT);
-    digitalWrite(PIN_LED, LOW);
-}
+#ifndef HLH_PIN_BTN
+// Vorschlag: Button an GPIO21 (gegen GND), interner Pullup
+#define HLH_PIN_BTN 21
+#endif
 
-void ButtonLedHandshakeModule::setLed(bool on) {
-    digitalWrite(PIN_LED, on ? HIGH : LOW);
-}
+#ifndef HLH_PIN_LED
+// Du hattest dich schon für GPIO20 entschieden
+#define HLH_PIN_LED 20
+#endif
 
-bool ButtonLedHandshakeModule::buttonPressedEdge() {
-    const uint32_t DEBOUNCE_MS = 30;
-    bool cur = digitalRead(PIN_BTN);
-    uint32_t now = millis();
+class ButtonLedHandshakeModule : public ProtobufModule {
+public:
+    explicit ButtonLedHandshakeModule(bool isMaster);
 
-    if (cur != lastBtn && (now - lastEdgeMs) > DEBOUNCE_MS) {
-        lastEdgeMs = now;
-        bool pressed = (lastBtn && !cur); // HIGH -> LOW (Pullup -> gedrückt)
-        lastBtn = cur;
-        return pressed;
-    }
-    return false;
-}
+    int32_t runOnce() override;
+    bool handleReceived(const meshtastic_MeshPacket &mp) override;
 
-void ButtonLedHandshakeModule::sendTextBroadcast(const String &txt) {
-    // allocate a DATA packet using Meshtastic helper (avoids Router API differences)
-    meshtastic_MeshPacket *p = allocDataPacket();
-    if (!p)
-        return;
+private:
+    enum State : uint8_t { IDLE, WAIT_ACK_S_ON, WAIT_ACK_M_OFF };
 
-    p->to = 0xFFFFFFFF; // Broadcast
-    p->want_ack = false;
-    p->channel = 0;
+    const bool isMaster;
+    State st = IDLE;
 
-    p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
+    bool lastBtn = true;          // INPUT_PULLUP: true = nicht gedrückt
+    uint32_t lastEdgeMs = 0;
 
-    auto &d = p->decoded;
-    d.payload.size = std::min((size_t)txt.length(), sizeof(d.payload.bytes) - 1);
-    memcpy(d.payload.bytes, txt.c_str(), d.payload.size);
+    void initPins();
+    void setLed(bool on);
+    bool buttonPressedEdge();
 
-    // send using ProtobufModule API (stable across branches)
-    sendPacket(p);
-}
-
-bool ButtonLedHandshakeModule::getTextPayload(const meshtastic_MeshPacket &mp, String &out) const {
-    if (!mp.has_decoded)
-        return false;
-    if (mp.decoded.portnum != meshtastic_PortNum_TEXT_MESSAGE_APP)
-        return false;
-    if (mp.decoded.payload.size == 0)
-        return false;
-
-    out = String((const char *)mp.decoded.payload.bytes, mp.decoded.payload.size);
-    out.trim();
-    return true;
-}
-
-bool ButtonLedHandshakeModule::handleReceived(const meshtastic_MeshPacket &mp) {
-    String txt;
-    if (!getTextPayload(mp, txt))
-        return false;
-
-    if (isMaster) {
-        if (st == WAIT_ACK_S_ON && txt == "ACK_S_ON") {
-            setLed(true);
-            st = IDLE;
-            return true;
-        }
-        if (txt == "LED_M_OFF") {
-            setLed(false);
-            sendTextBroadcast("ACK_M_OFF");
-            return true;
-        }
-    } else {
-        if (txt == "LED_S_ON") {
-            setLed(true);
-            sendTextBroadcast("ACK_S_ON");
-            return true;
-        }
-        if (txt == "ACK_M_OFF") {
-            setLed(false);
-            return true;
-        }
-    }
-
-    return false;
-}
-
-int32_t ButtonLedHandshakeModule::runOnce() {
-    if (buttonPressedEdge()) {
-        if (isMaster) {
-            sendTextBroadcast("LED_S_ON");
-            st = WAIT_ACK_S_ON;
-        } else {
-            sendTextBroadcast("LED_M_OFF");
-            st = WAIT_ACK_M_OFF;
-        }
-    }
-    return 200; // run every 200ms
-}
+    void sendTextBroadcast(const String &txt);
+    bool getTextPayload(const meshtastic_MeshPacket &mp, String &out) const;
+};
