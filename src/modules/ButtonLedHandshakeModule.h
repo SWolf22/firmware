@@ -1,6 +1,6 @@
 #pragma once
 
-#include "modules/Module.h"
+#include "Module.h"
 #include <Arduino.h>
 
 class ButtonLedHandshakeModule : public Module {
