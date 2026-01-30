@@ -2,12 +2,20 @@
 
 #include <Arduino.h>
 
-// IMPORTANT: this is Meshtastic's module base, NOT RadioLib's Module.h
+// Wichtig: NICHT "Module.h" (RadioLib-Falle!), sondern Meshtastic ProtobufModule:
 #include "mesh/ProtobufModule.h"
-
-// Needed for meshtastic_MeshPacket and PortNum values
 #include "mesh/generated/meshtastic/mesh.pb.h"
 #include "mesh/generated/meshtastic/portnums.pb.h"
+
+#ifndef HLH_PIN_BTN
+// Vorschlag: Button an GPIO21 (gegen GND), interner Pullup
+#define HLH_PIN_BTN 21
+#endif
+
+#ifndef HLH_PIN_LED
+// Du hattest dich schon für GPIO20 entschieden
+#define HLH_PIN_LED 20
+#endif
 
 class ButtonLedHandshakeModule : public ProtobufModule {
 public:
@@ -17,27 +25,18 @@ public:
     bool handleReceived(const meshtastic_MeshPacket &mp) override;
 
 private:
-    // helpers
+    enum State : uint8_t { IDLE, WAIT_ACK_S_ON, WAIT_ACK_M_OFF };
+
+    const bool isMaster;
+    State st = IDLE;
+
+    bool lastBtn = true;          // INPUT_PULLUP: true = nicht gedrückt
+    uint32_t lastEdgeMs = 0;
+
     void initPins();
     void setLed(bool on);
     bool buttonPressedEdge();
 
     void sendTextBroadcast(const String &txt);
     bool getTextPayload(const meshtastic_MeshPacket &mp, String &out) const;
-
-    // state machine
-    enum State : uint8_t {
-        IDLE = 0,
-        WAIT_ACK_S_ON,
-        WAIT_ACK_M_OFF
-    };
-
-    State st = IDLE;
-
-    // role
-    bool isMaster = false;
-
-    // debounce / edge detect
-    bool lastBtn = true;            // INPUT_PULLUP default HIGH
-    uint32_t lastEdgeMs = 0;
 };
