@@ -1,4 +1,5 @@
 #include "configuration.h"
+#include "modules/ButtonLedHandshakeModule.h"
 #if !MESHTASTIC_EXCLUDE_INPUTBROKER
 #include "buzz/BuzzerFeedbackThread.h"
 #include "modules/StatusLEDModule.h"
@@ -236,6 +237,13 @@ void setupModules()
 #if defined(HAS_HARDWARE_WATCHDOG)
     watchdogThread = new WatchdogThread();
 #endif
+    
+#ifndef HLH_ROLE_MASTER
+#define HLH_ROLE_MASTER 1
+#endif
+
+    new ButtonLedHandshakeModule(HLH_ROLE_MASTER != 0);
+
     // NOTE! This module must be added LAST because it likes to check for replies from other modules and avoid sending extra
     // acks
     routingModule = new RoutingModule();
