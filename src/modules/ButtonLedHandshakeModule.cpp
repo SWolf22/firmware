@@ -1,9 +1,9 @@
 #include "ButtonLedHandshakeModule.h"
-#include "Router.h"
+
 #include <algorithm>
 
 ButtonLedHandshakeModule::ButtonLedHandshakeModule(bool isMaster_)
-    : Module("ButtonLedHandshake"), isMaster(isMaster_) {
+    : ProtobufModule("ButtonLedHandshake"), isMaster(isMaster_) {
     initPins();
 }
 
@@ -24,7 +24,7 @@ bool ButtonLedHandshakeModule::buttonPressedEdge() {
 
     if (cur != lastBtn && (now - lastEdgeMs) > DEBOUNCE_MS) {
         lastEdgeMs = now;
-        bool pressed = (lastBtn && !cur); // HIGH -> LOW
+        bool pressed = (lastBtn && !cur); // HIGH -> LOW (Pullup -> gedrückt)
         lastBtn = cur;
         return pressed;
     }
@@ -32,25 +32,32 @@ bool ButtonLedHandshakeModule::buttonPressedEdge() {
 }
 
 void ButtonLedHandshakeModule::sendTextBroadcast(const String &txt) {
-    auto *p = router->allocForSending();
-    if (!p) return;
+    // allocate a DATA packet using Meshtastic helper (avoids Router API differences)
+    meshtastic_MeshPacket *p = allocDataPacket();
+    if (!p)
+        return;
 
     p->to = 0xFFFFFFFF; // Broadcast
     p->want_ack = false;
     p->channel = 0;
+
     p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
 
     auto &d = p->decoded;
-    d.payload.size = std::min(txt.length(), sizeof(d.payload.bytes) - 1);
+    d.payload.size = std::min((size_t)txt.length(), sizeof(d.payload.bytes) - 1);
     memcpy(d.payload.bytes, txt.c_str(), d.payload.size);
 
-    router->sendToMesh(p);
+    // send using ProtobufModule API (stable across branches)
+    sendPacket(p);
 }
 
 bool ButtonLedHandshakeModule::getTextPayload(const meshtastic_MeshPacket &mp, String &out) const {
-    if (!mp.has_decoded) return false;
-    if (mp.decoded.portnum != meshtastic_PortNum_TEXT_MESSAGE_APP) return false;
-    if (mp.decoded.payload.size == 0) return false;
+    if (!mp.has_decoded)
+        return false;
+    if (mp.decoded.portnum != meshtastic_PortNum_TEXT_MESSAGE_APP)
+        return false;
+    if (mp.decoded.payload.size == 0)
+        return false;
 
     out = String((const char *)mp.decoded.payload.bytes, mp.decoded.payload.size);
     out.trim();
@@ -59,7 +66,8 @@ bool ButtonLedHandshakeModule::getTextPayload(const meshtastic_MeshPacket &mp, S
 
 bool ButtonLedHandshakeModule::handleReceived(const meshtastic_MeshPacket &mp) {
     String txt;
-    if (!getTextPayload(mp, txt)) return false;
+    if (!getTextPayload(mp, txt))
+        return false;
 
     if (isMaster) {
         if (st == WAIT_ACK_S_ON && txt == "ACK_S_ON") {
@@ -83,6 +91,7 @@ bool ButtonLedHandshakeModule::handleReceived(const meshtastic_MeshPacket &mp) {
             return true;
         }
     }
+
     return false;
 }
 
@@ -96,5 +105,5 @@ int32_t ButtonLedHandshakeModule::runOnce() {
             st = WAIT_ACK_M_OFF;
         }
     }
-    return 200;
+    return 200; // run every 200ms
 }
