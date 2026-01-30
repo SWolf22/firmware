@@ -28,23 +28,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio
 
-      - name: Build firmware (Heltec WiFi LoRa 32 V3)
+      - name: Build firmware (heltec-v3)
         env:
           HLH_ROLE_MASTER: ${{ matrix.variant.role_master }}
         run: |
-          # Create a PlatformIO override that adds our build flag for this job
+          # Add build flag via PlatformIO override for this run
           cat > platformio_override.ini << EOF
-          [env:heltec_wifi_lora_32_V3]
+          [env:heltec-v3]
           build_flags =
               -DHLH_ROLE_MASTER=${HLH_ROLE_MASTER}
           EOF
 
-          pio run -e heltec_wifi_lora_32_V3
+          pio run -e heltec-v3
 
       - name: Collect firmware.bin
         run: |
           mkdir -p out
-          cp .pio/build/heltec_wifi_lora_32_V3/firmware.bin out/${{ matrix.variant.name }}.bin
+          cp .pio/build/heltec-v3/firmware.bin out/${{ matrix.variant.name }}.bin
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        with:
+          name: heltec_v3_${{ matrix.variant.name }}
+          path: out/${{ matrix.variant.name }}.bin
