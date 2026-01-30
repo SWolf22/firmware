@@ -1,0 +1,45 @@
+name: Build Heltec V3 Master+Slave
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant:
+          - name: master
+            role_master: "1"
+          - name: slave
+            role_master: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+
+      - name: Build firmware (Heltec WiFi LoRa 32 V3)
+        env:
+          HLH_ROLE_MASTER: ${{ matrix.variant.role_master }}
+        run: |
+          pio run -e heltec_wifi_lora_32_V3 \
+            --project-option="build_flags=-DHLH_ROLE_MASTER=${HLH_ROLE_MASTER}"
+
+      - name: Collect firmware.bin
+        run: |
+          mkdir -p out
+          cp .pio/build/heltec_wifi_lora_32_V3/firmware.bin out/${{ matrix.variant.name }}.bin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heltec_v3_${{ matrix.variant.name }}
+          path: out/${{ matrix.variant.name }}.bin
